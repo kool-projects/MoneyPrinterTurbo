@@ -4,6 +4,12 @@
 
 ### An All-in-One AI Short Video Generator
 
+**Long-video MVP in this fork:** opt in with `--target-duration-minutes 10` (10–30).
+The existing providers are reused for per-chapter narration, footage and rendering;
+FFmpeg joins the chapters into a 16:9 final video. See the
+[Portuguese setup and execution guide](docs/long-video.md) and
+[technical plan](docs/long-video-plan.md). Without this option, short-video behavior is unchanged.
+
 Provide a video <b>topic</b> or <b>keyword</b>, and MoneyPrinterTurbo will generate the script, match footage, create subtitles and background music, and produce an HD short video.
 
 [![Version](https://img.shields.io/github/v/release/harry0703/MoneyPrinterTurbo?color=blue&label=version)](https://github.com/harry0703/MoneyPrinterTurbo/releases)

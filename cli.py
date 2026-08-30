@@ -301,6 +301,11 @@ Batch manifests:
 
     content_group = parser.add_argument_group("script and content")
     content_group.add_argument(
+        "--target-duration-minutes", type=int, default=0,
+        choices=[0, *range(10, 31)],
+        help="0 keeps short videos; 10–30 enables chapter rendering in 16:9",
+    )
+    content_group.add_argument(
         "--video-subject",
         default="",
         help="video topic; required unless --video-script is provided",
@@ -922,6 +927,7 @@ def build_video_params(args: argparse.Namespace) -> VideoParams:
         ]
 
     params_kwargs = {
+        "target_duration_minutes": args.target_duration_minutes,
         "video_subject": args.video_subject.strip(),
         "video_script": args.video_script,
         "video_terms": video_terms,

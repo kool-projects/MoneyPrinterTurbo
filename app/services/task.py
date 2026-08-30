@@ -881,7 +881,8 @@ def _get_material_source_groups(task_id: str, video_paths: list[str]) -> dict[st
 
 
 def generate_final_videos(
-    task_id, params, downloaded_videos, audio_file, subtitle_path, audio_duration
+    task_id, params, downloaded_videos, audio_file, subtitle_path, audio_duration,
+    progress_callback=None,
 ):
     final_video_paths = []
     combined_video_paths = []
@@ -963,7 +964,10 @@ def generate_final_videos(
                 })
 
         _progress += 50 / params.video_count / 2
-        sm.state.update_task(task_id, progress=_progress)
+        if progress_callback is None:
+            sm.state.update_task(task_id, progress=_progress)
+        else:
+            progress_callback(_progress)
 
         final_video_path = path.join(utils.task_dir(task_id), f"final-{index}.mp4")
 
@@ -1021,7 +1025,10 @@ def generate_final_videos(
             )
 
         _progress += 50 / params.video_count / 2
-        sm.state.update_task(task_id, progress=_progress)
+        if progress_callback is None:
+            sm.state.update_task(task_id, progress=_progress)
+        else:
+            progress_callback(_progress)
 
         final_video_paths.append(final_video_path)
         combined_video_paths.append(combined_video_path)
@@ -1496,6 +1503,16 @@ def _run_pipeline(
             "ffmpeg is not available; install ffmpeg or set app.ffmpeg_path "
             "in config.toml to a working ffmpeg executable",
         )
+
+    if getattr(params, "target_duration_minutes", 0):
+        from app.services.long_video import run_long_video
+
+        # Revalidate also for callers that mutate a model (e.g. the WebUI).
+        try:
+            params = VideoParams.model_validate(params.model_dump(warnings=False))
+        except ValueError as exc:
+            return _mark_task_failed(task_id, "preflight", str(exc))
+        return run_long_video(task_id, params, stop_at=stop_at)
 
     # 1. Generate script
     video_script = generate_script(task_id, params)

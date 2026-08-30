@@ -813,6 +813,82 @@ def generate_script(
     return final_script.strip()
 
 
+def generate_long_script(
+    video_subject: str,
+    target_duration_minutes: int,
+    language: str = "",
+    voice_rate: float = 1.0,
+    video_script_prompt: str = "",
+    custom_system_prompt: str = "",
+) -> list[dict]:
+    """Generate bounded chapters through the existing provider dispatcher.
+
+    A two-minute word budget is an estimate, not an audio duration guarantee.
+    Only the outline and the previous chapter's tail are carried forward.
+    """
+    import math
+
+    count = math.ceil(target_duration_minutes / 2)
+    words = max(80, round(target_duration_minutes * 140 * voice_rate / count))
+    context = (
+        f"Topic: {video_subject}\nLanguage: {language or 'same as topic'}\n"
+        f"Editorial requirements: {video_script_prompt}\n"
+        f"Style: {custom_system_prompt}\n"
+    )
+
+    def request(prompt, validate):
+        last_error = None
+        for _ in range(_max_retries):
+            try:
+                response = _generate_response(prompt=prompt).strip()
+                if not response or "Error: " in response or "当日额度已消耗完" in response:
+                    raise ValueError("empty or failed long script response")
+                return validate(response)
+            except Exception as exc:
+                last_error = exc
+        raise ValueError(f"long script generation failed: {last_error}")
+
+    def parse_outline(response):
+        titles = json.loads(_strip_code_fence(response))
+        if (not isinstance(titles, list) or len(titles) != count
+                or any(not isinstance(t, str) or not t.strip() or len(t) > 200 for t in titles)):
+            raise ValueError(f"outline must contain exactly {count} short chapter titles")
+        return [t.strip() for t in titles]
+
+    titles = request(
+        context + f"Create an outline for a {target_duration_minutes}-minute video. "
+        f"Return ONLY a JSON array of exactly {count} distinct chapter titles, "
+        "in narrative order, including an opening and a conclusion.",
+        parse_outline,
+    )
+    chapters = []
+    previous_tail = ""
+    for index, title in enumerate(titles, 1):
+        prompt = (
+            context + f"\nOutline: {json.dumps(titles, ensure_ascii=False)}\n"
+            f"Write chapter {index}/{count}: {title}\n"
+            f"Previous narration ending: {previous_tail}\n"
+            f"Aim for {words} spoken words (about {target_duration_minutes / count:.1f} "
+            "minutes). For languages without spaces, use an equivalent speaking duration. "
+            "Return only spoken narration, with paragraphs, no heading, markdown, "
+            "stage directions or word counts. Develop the chapter with concrete details; "
+            "do not summarize the outline or repeat earlier chapters. "
+            "Only the last chapter should close the video."
+        )
+
+        def validate_narration(response):
+            # Catch obviously truncated answers before paying for TTS/materials.
+            units = len(re.findall(r"[\u3400-\u9fff]|[^\W_]+", response))
+            if units < words * 0.65:
+                raise ValueError(f"chapter {index} too short for its narration budget")
+            return response
+
+        script = request(prompt, validate_narration)
+        chapters.append({"title": title, "script": script})
+        previous_tail = script[-1000:]
+    return chapters
+
+
 def _strip_code_fence(text: str) -> str:
     """Strip a surrounding markdown code fence from an LLM response.
 

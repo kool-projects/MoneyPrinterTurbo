@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Any, List, Literal, Optional, Union
 
 import pydantic
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.config import config
 
@@ -104,6 +104,10 @@ class VideoParams(BaseModel):
     """
 
     video_subject: str
+    target_duration_minutes: int = Field(
+        default=0, ge=0, le=30, strict=True,
+        description="0: existing short pipeline; 10–30: long video MVP, forced 16:9",
+    )
     video_script: str = ""  # Script used to generate the video
     video_terms: Optional[str | list] = None  # Keywords used to generate the video
     video_aspect: Optional[VideoAspect] = VideoAspect.portrait.value
@@ -159,6 +163,28 @@ class VideoParams(BaseModel):
     paragraph_number: int = Field(default=1, ge=1, le=10)
     video_script_prompt: str = Field(default="", max_length=2000)
     custom_system_prompt: str = Field(default="", max_length=8000)
+
+    @field_validator("target_duration_minutes")
+    @classmethod
+    def validate_target_duration(cls, value):
+        if value != 0 and value < 10:
+            raise ValueError("target_duration_minutes must be 0 or between 10 and 30")
+        return value
+
+    @model_validator(mode="after")
+    def validate_long_video(self):
+        if self.target_duration_minutes:
+            if self.video_count != 1:
+                raise ValueError("long video MVP supports video_count=1")
+            if self.custom_audio_file:
+                raise ValueError("long video MVP requires per-chapter TTS, not custom_audio_file")
+            if self.video_source == "loomloom":
+                raise ValueError("long video MVP cannot reuse a LoomLoom quote across chapters")
+            import math
+            if not self.voice_rate or not math.isfinite(self.voice_rate) or self.voice_rate <= 0:
+                raise ValueError("long video voice_rate must be finite and positive")
+            self.video_aspect = VideoAspect.landscape
+        return self
 
 
 class SubtitleRequest(BaseModel):

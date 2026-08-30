@@ -537,6 +537,41 @@ def concat_video_clips_with_ffmpeg(
         delete_files(concat_list_file)
 
 
+def concat_chapters_with_ffmpeg(chapter_files: List[str], output_file: str) -> None:
+    """Join identically encoded chapter MP4s without loading/re-encoding them.
+
+    All chapters must come from the same render settings. Both video and audio
+    are required; failures never replace an existing finished output.
+    """
+    if not chapter_files:
+        raise ValueError("no chapters to concatenate")
+    for filename in chapter_files:
+        if not os.path.isfile(filename) or os.path.getsize(filename) == 0:
+            raise ValueError(f"missing or empty chapter: {filename}")
+        if any(c in filename for c in ("\n", "\r", "\x00")):
+            raise ValueError("invalid chapter path")
+        if os.path.realpath(filename) == os.path.realpath(output_file):
+            raise ValueError("output must not overwrite an input chapter")
+    output_dir = os.path.dirname(os.path.abspath(output_file))
+    with tempfile.TemporaryDirectory(prefix=".chapter-concat-", dir=output_dir) as tmp:
+        concat_list = os.path.join(tmp, "chapters.txt")
+        temporary_output = os.path.join(tmp, "final.mp4")
+        with open(concat_list, "w", encoding="utf-8") as fp:
+            for filename in chapter_files:
+                fp.write(f"file '{_format_ffmpeg_concat_path(filename)}'\n")
+        result = subprocess.run(
+            [utils.get_ffmpeg_binary(), "-hide_banner", "-loglevel", "error", "-y",
+             "-f", "concat", "-safe", "0", "-i", concat_list,
+             "-map", "0:v:0", "-map", "0:a:0", "-c", "copy",
+             "-movflags", "+faststart", temporary_output],
+            capture_output=True, text=True, check=False,
+        )
+        if (result.returncode or not os.path.isfile(temporary_output)
+                or os.path.getsize(temporary_output) == 0):
+            raise RuntimeError(f"chapter concat failed: {result.stderr[-4000:]}")
+        os.replace(temporary_output, output_file)
+
+
 def _sanitize_image_file(image_path: str) -> str:
     # 某些本地图片虽然能被 Pillow 打开，但会因为损坏的 EXIF/eXIf 元数据导致
     # ImageClip 在解析阶段直接抛异常。这里重新导出一份“干净图片”，把坏元数据剥离掉。
