@@ -1,0 +1,15 @@
+# Dá ao MoneyPrinter acesso à pasta de troca do laboratório, em /troca.
+# Nada automático: o app só enxerga a pasta, quem manda pegar arquivo é você.
+#
+# Também troca 'restart: always' por 'unless-stopped'. Com 'always' ele voltava
+# a ligar sozinho mesmo depois de você parar na mão.
+x-troca: &troca
+  - $HOME/Lab/_troca:/troca
+
+services:
+  webui:
+    volumes: *troca
+    restart: unless-stopped
+  api:
+    volumes: *troca
+    restart: unless-stopped
